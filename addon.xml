@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="plugin.video.douban" name="豆瓣推荐" version="1.0.0" provider-name="shawm">
+  <requires>
+    <import addon="xbmc.python" version="3.0.0"/>
+    <import addon="script.module.requests" version="2.22.0"/>
+  </requires>
+  <extension point="xbmc.python.pluginsource" library="addon.py">
+    <provides>video</provides>
+  </extension>
+  <extension point="xbmc.addon.metadata">
+    <summary>豆瓣电影/剧集/综艺推荐</summary>
+    <description>基于豆瓣API获取热门电影、剧集、综艺推荐，支持筛选和TMDB元数据补充，播放调用盘搜插件</description>
+    <platform>all</platform>
+  </extension>
+</addon>

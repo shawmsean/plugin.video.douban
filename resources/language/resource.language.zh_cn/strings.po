@@ -1,0 +1,11 @@
+msgctxt "#30001"
+msgid "TMDB API Key"
+msgstr "TMDB API密钥"
+
+msgctxt "#30002"
+msgid "TMDB Language"
+msgstr "TMDB语言"
+
+msgctxt "#30010"
+msgid "TMDB Settings"
+msgstr "TMDB设置"

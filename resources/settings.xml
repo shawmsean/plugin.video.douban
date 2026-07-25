@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<settings version="2">
+  <category label="30010">
+    <setting id="tmdb_api_key" type="text" label="30001" default="d7040155454e7fdf547c4d889ebbcca7"/>
+    <setting id="tmdb_language" type="select" label="30002" default="zh-CN" values="zh-CN|en-US|ja-JP|ko-KR"/>
+  </category>
+</settings>
