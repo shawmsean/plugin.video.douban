@@ -161,15 +161,27 @@ def _enrichPosters(items):
             pass
 
 
+def _cleanTitleForSearch(title):
+    import re
+    cleaned = re.sub(r'\s*第[一二三四五六七八九十\d]+季\s*$', '', title)
+    return cleaned.strip() if cleaned.strip() != title.strip() else title
+
+
 def _enrichPoster(item):
     title = item.get('title', '')
     if not title:
         return
-    tmdbInfo = searchTmdb(title)
-    if tmdbInfo and tmdbInfo.get('poster'):
-        item['poster'] = tmdbInfo['poster']
-    if tmdbInfo and tmdbInfo.get('backdrop'):
-        item['backdrop'] = tmdbInfo['backdrop']
+    searchTitle = _cleanTitleForSearch(title)
+    tmdbInfo = searchTmdb(searchTitle)
+    if not tmdbInfo or not tmdbInfo.get('poster'):
+        if searchTitle != title:
+            tmdbInfo = searchTmdb(title)
+    if tmdbInfo:
+        if tmdbInfo.get('poster'):
+            item['poster'] = tmdbInfo['poster']
+        if tmdbInfo.get('backdrop'):
+            item['backdrop'] = tmdbInfo['backdrop']
+        item['tmdbInfo'] = tmdbInfo
 
 
 def _addTriggerItem(handle, nextUrl, triggerIndex):
@@ -417,6 +429,7 @@ def _backgroundEnrich(cKey, items):
         _enrichPosters(items)
         _writeCache(cKey, items)
         logInfo(f"后台enrich完成，缓存已更新: {cKey}")
+
     t = threading.Thread(target=_worker, daemon=True)
     t.start()
 
@@ -430,7 +443,7 @@ def _addListItem(handle, base, item, mediaType):
     rating = item.get('rating', '')
     meta = item.get('meta', '')
     subtitle = item.get('subtitle', '')
-    catId = item.get('categoryId', '')
+    tmdbInfo = item.get('tmdbInfo')
 
     cKey = _cacheKey('item', itemId)
     _writeCache(cKey, item)
@@ -448,101 +461,56 @@ def _addListItem(handle, base, item, mediaType):
     if subtitle:
         info['tagline'] = subtitle
 
-    art = {'poster': poster, 'icon': poster} if poster else {}
+    art = {}
+    if poster:
+        art['poster'] = poster
+        art['icon'] = poster
     if backdrop:
         art['thumb'] = backdrop
         art['fanart'] = backdrop
         art['landscape'] = backdrop
     elif poster:
         art['thumb'] = poster
+
+    properties = {}
+
+    if tmdbInfo:
+        infoExt, _, propsTmdb = _buildTmdbMeta(tmdbInfo, poster)
+        info.update(infoExt)
+        properties.update(propsTmdb)
+        if tmdbInfo.get('overview'):
+            info['plot'] = tmdbInfo['overview']
+
     art = art if art else None
-    addDir(handle, base, title, 'detail', douban_id=itemId, cat_id=catId,
-           art=art, info=info, mediatype=mediaType)
 
+    url = buildUrl(base, 'play', douban_id=itemId)
+    li = xbmcgui.ListItem(title, offscreen=True)
+    if art:
+        li.setArt(art)
+    li.setInfo('video', info)
+    if properties:
+        for key, val in properties.items():
+            if val:
+                li.setProperty(key, str(val))
+    li.setProperty('IsPlayable', 'true')
 
-def showDetail(handle, base, douban_id, cat_id):
-    logInfo(f"详情: id={douban_id}, cat={cat_id}")
-    cKey = _cacheKey('detail', douban_id)
-    cached = _readCache(cKey)
-    if cached:
-        detail = cached.get('detail')
-        tmdbInfo = cached.get('tmdbInfo')
-    else:
-        detail = _fetchDoubanDetail(douban_id)
-        if not detail:
-            xbmcgui.Dialog().notification("豆瓣推荐", "加载详情失败", xbmcgui.NOTIFICATION_ERROR, 3000)
-            endDir(handle, 'videos')
-            return
-        title = detail.get('title', '')
-        tmdbInfo = searchTmdb(title)
-        _writeCache(cKey, {'detail': detail, 'tmdbInfo': tmdbInfo})
+    searchTitle = _cleanTitleForSearch(title)
+    pansouUrl = f'plugin://plugin.video.pansou/?action=results&keyword={urllib.parse.quote(searchTitle)}'
+    li.addContextMenuItems([('盘搜搜索', f'Container.Update({pansouUrl})')], replaceItems=False)
 
-    title = detail.get('title', '')
-    overview = detail.get('overview', '')
-    poster = detail.get('poster', '')
-    year = detail.get('year', '')
-    rating = detail.get('rating', '')
-    subtitle = detail.get('subtitle', '')
-    meta = detail.get('meta', '')
-
-    if tmdbInfo and tmdbInfo.get('poster'):
-        poster = tmdbInfo['poster']
-    if tmdbInfo and tmdbInfo.get('overview'):
-        overview = tmdbInfo['overview']
-
-    info = {'title': title, 'plot': overview}
-    if year:
-        info['year'] = year
-    if rating:
-        try:
-            info['rating'] = float(rating)
-        except (ValueError, TypeError):
-            pass
-    if subtitle:
-        info['tagline'] = subtitle
-    if meta:
-        info['mpaa'] = meta
-
-    infoExt, art, properties = _buildTmdbMeta(tmdbInfo, poster)
-    info.update(infoExt)
-    fanart = art.get('fanart', '')
-
-    contentType = 'movies' if _isMovieCategory(cat_id) else 'episodes'
-
-    addPlayItem(handle, base, '播放', 'play',
-                douban_id=douban_id, art=art, info=info, mediatype='video', properties=properties)
-
-    addDir(handle, base, '盘搜搜索', 'pansou_search',
-           title=title, art=art, info=info, mediatype='video', properties=properties)
-
-    endDir(handle, 'videos')
-
-
-def _fetchDoubanDetail(douban_id):
-    iKey = _cacheKey('item', douban_id)
-    cached = _readCache(iKey)
-    if cached and isinstance(cached, dict) and cached.get('title'):
-        return cached
-    return {
-        'id': douban_id,
-        'title': '',
-        'overview': '',
-        'year': '',
-    }
+    xbmcplugin.addDirectoryItem(handle, url, li, False)
 
 
 def play(handle, base, douban_id):
     iKey = _cacheKey('item', douban_id)
     item = _readCache(iKey)
-    title = ''
-    year = ''
-    if item and isinstance(item, dict):
-        title = item.get('title', '')
-        year = item.get('year', '')
+    if not item or not isinstance(item, dict):
+        xbmcplugin.setResolvedUrl(handle, False, xbmcgui.ListItem(offscreen=True))
+        return
 
-    cKey = _cacheKey('detail', douban_id)
-    cached = _readCache(cKey)
-    tmdbInfo = cached.get('tmdbInfo') if cached else None
+    title = item.get('title', '')
+    year = item.get('year', '')
+    tmdbInfo = item.get('tmdbInfo')
     if tmdbInfo:
         if tmdbInfo.get('title'):
             title = tmdbInfo['title']
@@ -564,20 +532,12 @@ def play(handle, base, douban_id):
     xbmcplugin.setResolvedUrl(handle, True, li)
 
 
-def showPansouSearch(handle, base, title=''):
-    if not title:
-        endDir(handle, 'videos')
-        return
-    url = f'plugin://plugin.video.pansou/?action=results&keyword={urllib.parse.quote(title)}'
-    xbmc.executebuiltin(f'Container.Update({url})')
-
-
 def showSearchInput(handle, base):
+    endDir(handle, 'sources')
     keyboard = xbmcgui.Dialog().input('搜索影片', '', xbmcgui.INPUT_ALPHANUM)
     if not keyboard:
-        endDir(handle, 'sources')
         return
-    url = buildUrl(base, 'search_results', keyword=keyboard)
+    url = f'plugin://plugin.video.pansou/?action=results&keyword={urllib.parse.quote(keyboard)}'
     xbmc.executebuiltin(f'Container.Update({url})')
 
 
@@ -624,9 +584,7 @@ ROUTER = {
     'filter_year': showFilterYear,
     'filter_sort': showFilterSort,
     'filter_list': showFilterList,
-    'detail': showDetail,
     'play': play,
-    'pansou_search': showPansouSearch,
     'search_input': showSearchInput,
     'search_results': showSearchResults,
     'clear_cache': clearCache,
