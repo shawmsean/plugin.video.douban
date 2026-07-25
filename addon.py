@@ -434,11 +434,24 @@ def _backgroundEnrich(cKey, items):
     t.start()
 
 
+_DOUBAN_IMG_PROXY = 'http://192.168.99.184:8443'
+
+
+def _proxyDoubanImage(url):
+    if not url or 'doubanio.com' not in url:
+        return url
+    import re
+    m = re.match(r'https?://img(\d+)\.doubanio\.com(/.*)', url)
+    if m:
+        return f'{_DOUBAN_IMG_PROXY}/img{m.group(1)}{m.group(2)}'
+    return url
+
+
 def _addListItem(handle, base, item, mediaType):
     itemId = item.get('id', '')
     title = item.get('title', '')
-    poster = item.get('poster', '')
-    backdrop = item.get('backdrop', '')
+    poster = _proxyDoubanImage(item.get('poster', ''))
+    backdrop = _proxyDoubanImage(item.get('backdrop', ''))
     year = item.get('year', '')
     rating = item.get('rating', '')
     meta = item.get('meta', '')
