@@ -28,7 +28,7 @@ def _setCached(key, value):
     _cacheTs[key] = time.time()
 
 
-def searchTmdb(title):
+def searchTmdb(title, skip_detail=False):
     if not title:
         return None
     cached = _getCached(f'search_{title}')
@@ -61,7 +61,7 @@ def searchTmdb(title):
 
     result = _formatTmdbResult(best)
 
-    if result and result.get('tmdbId'):
+    if result and result.get('tmdbId') and not skip_detail:
         mediaType = result.get('mediaType', 'movie')
         if mediaType not in ('movie', 'tv'):
             mediaType = 'movie'
@@ -154,3 +154,83 @@ def _formatTmdbResult(item):
         'numberOfSeasons': numberOfSeasons,
         'numberOfEpisodes': numberOfEpisodes,
     }
+
+
+def fetchSeasons(tmdbId):
+    url = _tmdbUrl(f'/tv/{tmdbId}')
+    resp = get(url, timeoutKey='detail')
+    if not resp:
+        return []
+    try:
+        data = resp.json()
+    except Exception:
+        return []
+    seasons = data.get('seasons', [])
+    result = []
+    showName = data.get('name', '')
+    showPosterPath = data.get('poster_path', '')
+    showBackdropPath = data.get('backdrop_path', '')
+    showPoster = f'https://images.tmdb.org/t/p/w500{showPosterPath}' if showPosterPath else ''
+    showBackdrop = f'https://images.tmdb.org/t/p/w1280{showBackdropPath}' if showBackdropPath else ''
+    for s in seasons:
+        sn = s.get('season_number', 0)
+        if sn == 0:
+            continue
+        posterPath = s.get('poster_path', '')
+        poster = f'https://images.tmdb.org/t/p/w500{posterPath}' if posterPath else showPoster
+        airDate = s.get('air_date', '')
+        year = airDate[:4] if airDate and len(airDate) >= 4 else ''
+        result.append({
+            'season': sn,
+            'title': s.get('name', f'第{sn}季'),
+            'overview': s.get('overview', ''),
+            'poster': poster,
+            'backdrop': showBackdrop,
+            'episodeCount': s.get('episode_count', 0),
+            'year': year,
+            'premiered': airDate,
+            'showName': showName,
+            'showPoster': showPoster,
+            'showBackdrop': showBackdrop,
+            'tmdbId': tmdbId,
+        })
+    return result
+
+
+def fetchEpisodes(tmdbId, seasonNumber):
+    url = _tmdbUrl(f'/tv/{tmdbId}/season/{seasonNumber}')
+    resp = get(url, timeoutKey='detail')
+    if not resp:
+        return []
+    try:
+        data = resp.json()
+    except Exception:
+        return []
+    episodes = data.get('episodes', [])
+    seasonPosterPath = data.get('poster_path', '')
+    seasonPoster = f'https://images.tmdb.org/t/p/w500{seasonPosterPath}' if seasonPosterPath else ''
+    result = []
+    for ep in episodes:
+        en = ep.get('episode_number', 0)
+        if en == 0:
+            continue
+        stillPath = ep.get('still_path', '')
+        thumb = f'https://images.tmdb.org/t/p/w1280{stillPath}' if stillPath else ''
+        airDate = ep.get('air_date', '')
+        year = airDate[:4] if airDate and len(airDate) >= 4 else ''
+        runtime = ep.get('runtime', 0) or 0
+        result.append({
+            'season': seasonNumber,
+            'episode': en,
+            'title': ep.get('name', ''),
+            'overview': ep.get('overview', ''),
+            'thumb': thumb,
+            'rating': ep.get('vote_average', 0),
+            'year': year,
+            'premiered': airDate,
+            'duration': runtime,
+            'showName': ep.get('show_name', data.get('name', '')),
+            'tmdbId': tmdbId,
+            'seasonPoster': seasonPoster,
+        })
+    return result

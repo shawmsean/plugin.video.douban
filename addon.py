@@ -15,7 +15,7 @@ from resources.lib.doubanApi import (
     FILTER_REGIONS, TV_FILTER_REGIONS, FILTER_YEARS, FILTER_SORTS, TV_FILTER_PLATFORMS,
     fetchRecentHot, fetchRecommend,
 )
-from resources.lib.tmdbApi import searchTmdb
+from resources.lib.tmdbApi import searchTmdb, fetchSeasons, fetchEpisodes
 from resources.lib.settings import getSetting, reload as reloadSettings
 from resources.lib.logger import logInfo, logError
 
@@ -379,7 +379,7 @@ def showRecentHot(handle, base, cat_id, category='', type='', page=1):
     hasMore = start + limit < total
     nextUrl = buildUrl(base, 'recent_hot', cat_id=cat_id,
                        category=category, type=type, page=str(page + 1)) if hasMore else None
-    _renderListWithPager(handle, base, allItems, mediaType, contentType, hasMore=hasMore, nextUrl=nextUrl)
+    _renderListWithPager(handle, base, allItems, mediaType, contentType, cat_id=cat_id, hasMore=hasMore, nextUrl=nextUrl)
     _backgroundEnrich(cKey, allItems)
 
 
@@ -405,13 +405,13 @@ def showFilterList(handle, base, cat_id, genre='', region='', year='', sort='U',
     hasMore = start + limit < total
     nextUrl = buildUrl(base, 'filter_list', cat_id=cat_id,
                        genre=genre, region=region, year=year, sort=sort, page=str(page + 1)) if hasMore else None
-    _renderListWithPager(handle, base, allItems, mediaType, contentType, hasMore=hasMore, nextUrl=nextUrl)
+    _renderListWithPager(handle, base, allItems, mediaType, contentType, cat_id=cat_id, hasMore=hasMore, nextUrl=nextUrl)
     _backgroundEnrich(cKey, allItems)
 
 
-def _renderListWithPager(handle, base, items, mediaType, contentType, hasMore=False, nextUrl=None):
+def _renderListWithPager(handle, base, items, mediaType, contentType, cat_id='', hasMore=False, nextUrl=None):
     for item in items:
-        _addListItem(handle, base, item, mediaType)
+        _addListItem(handle, base, item, mediaType, cat_id=cat_id)
     if hasMore and nextUrl:
         _addTriggerItem(handle, nextUrl, len(items))
     endDir(handle, contentType)
@@ -447,7 +447,7 @@ def _proxyDoubanImage(url):
     return url
 
 
-def _addListItem(handle, base, item, mediaType):
+def _addListItem(handle, base, item, mediaType, cat_id=''):
     itemId = item.get('id', '')
     title = item.get('title', '')
     poster = _proxyDoubanImage(item.get('poster', ''))
@@ -457,6 +457,7 @@ def _addListItem(handle, base, item, mediaType):
     meta = item.get('meta', '')
     subtitle = item.get('subtitle', '')
     tmdbInfo = item.get('tmdbInfo')
+    isTv = mediaType == 'tvshow' and not _isMovieCategory(cat_id)
 
     cKey = _cacheKey('item', itemId)
     _writeCache(cKey, item)
@@ -496,22 +497,196 @@ def _addListItem(handle, base, item, mediaType):
 
     art = art if art else None
 
-    url = buildUrl(base, 'play', douban_id=itemId)
-    li = xbmcgui.ListItem(title, offscreen=True)
-    if art:
-        li.setArt(art)
-    li.setInfo('video', info)
-    if properties:
-        for key, val in properties.items():
-            if val:
-                li.setProperty(key, str(val))
-    li.setProperty('IsPlayable', 'true')
-
     searchTitle = _cleanTitleForSearch(title)
     pansouUrl = f'plugin://plugin.video.pansou/?action=results&keyword={urllib.parse.quote(searchTitle)}'
-    li.addContextMenuItems([('盘搜搜索', f'Container.Update({pansouUrl})')], replaceItems=False)
 
-    xbmcplugin.addDirectoryItem(handle, url, li, False)
+    if isTv and tmdbInfo and tmdbInfo.get('tmdbId'):
+        tmdbId = tmdbInfo['tmdbId']
+        url = buildUrl(base, 'seasons', tmdb_id=tmdbId, douban_id=itemId)
+        li = xbmcgui.ListItem(title, offscreen=True)
+        if art:
+            li.setArt(art)
+        li.setInfo('video', info)
+        if properties:
+            for key, val in properties.items():
+                if val:
+                    li.setProperty(key, str(val))
+        li.addContextMenuItems([
+            ('自动播放', f'PlayMedia(plugin://plugin.video.douban/?action=play&douban_id={itemId})'),
+            ('盘搜搜索', f'Container.Update({pansouUrl})'),
+        ], replaceItems=False)
+        xbmcplugin.addDirectoryItem(handle, url, li, True)
+    else:
+        url = buildUrl(base, 'play', douban_id=itemId)
+        li = xbmcgui.ListItem(title, offscreen=True)
+        if art:
+            li.setArt(art)
+        li.setInfo('video', info)
+        if properties:
+            for key, val in properties.items():
+                if val:
+                    li.setProperty(key, str(val))
+        li.setProperty('IsPlayable', 'true')
+        li.addContextMenuItems([('盘搜搜索', f'Container.Update({pansouUrl})')], replaceItems=False)
+        xbmcplugin.addDirectoryItem(handle, url, li, False)
+
+
+def showSeasons(handle, base, tmdb_id, douban_id):
+    logInfo(f"季列表: tmdb_id={tmdb_id}, douban_id={douban_id}")
+    iKey = _cacheKey('item', douban_id)
+    item = _readCache(iKey)
+    showTitle = item.get('title', '') if item and isinstance(item, dict) else ''
+    tmdbInfo = item.get('tmdbInfo') if item and isinstance(item, dict) else None
+    if tmdbInfo and tmdbInfo.get('title'):
+        showTitle = tmdbInfo['title']
+
+    seasons = fetchSeasons(tmdb_id)
+    if not seasons:
+        xbmcgui.Dialog().notification("豆瓣推荐", "获取季列表失败", xbmcgui.NOTIFICATION_ERROR, 3000)
+        endDir(handle, 'seasons')
+        return
+
+    for s in seasons:
+        sn = s['season']
+        title = s.get('title', f'第{sn}季')
+        epCount = s.get('episodeCount', 0)
+        label = f'{title} ({epCount}集)'
+        poster = s.get('poster', '')
+        backdrop = s.get('backdrop', '')
+
+        info = {'title': label, 'mediatype': 'season', 'tvshowtitle': showTitle, 'season': sn}
+        if s.get('year'):
+            info['year'] = s['year']
+        if s.get('overview'):
+            info['plot'] = s['overview']
+        if s.get('premiered'):
+            info['premiered'] = s['premiered']
+        if epCount:
+            info['episode'] = epCount
+
+        art = {}
+        if poster:
+            art['poster'] = poster
+            art['icon'] = poster
+        if backdrop:
+            art['thumb'] = backdrop
+            art['fanart'] = backdrop
+            art['landscape'] = backdrop
+        elif poster:
+            art['thumb'] = poster
+        art = art if art else None
+
+        properties = {}
+        if epCount:
+            properties['totalepisodes'] = str(epCount)
+
+        url = buildUrl(base, 'episodes', tmdb_id=tmdb_id, season=str(sn), douban_id=douban_id)
+        li = xbmcgui.ListItem(label, offscreen=True)
+        if art:
+            li.setArt(art)
+        li.setInfo('video', info)
+        if properties:
+            for key, val in properties.items():
+                if val:
+                    li.setProperty(key, str(val))
+        xbmcplugin.addDirectoryItem(handle, url, li, True)
+
+    endDir(handle, 'seasons')
+
+
+def showEpisodes(handle, base, tmdb_id, season, douban_id):
+    season = int(season)
+    logInfo(f"集列表: tmdb_id={tmdb_id}, season={season}, douban_id={douban_id}")
+    iKey = _cacheKey('item', douban_id)
+    item = _readCache(iKey)
+    showTitle = item.get('title', '') if item and isinstance(item, dict) else ''
+    tmdbInfo = item.get('tmdbInfo') if item and isinstance(item, dict) else None
+    if tmdbInfo and tmdbInfo.get('title'):
+        showTitle = tmdbInfo['title']
+
+    episodes = fetchEpisodes(tmdb_id, season)
+    if not episodes:
+        xbmcgui.Dialog().notification("豆瓣推荐", "获取集列表失败", xbmcgui.NOTIFICATION_ERROR, 3000)
+        endDir(handle, 'episodes')
+        return
+
+    seasonPoster = episodes[0].get('seasonPoster', '') if episodes else ''
+
+    for ep in episodes:
+        en = ep['episode']
+        epTitle = ep.get('title', '')
+        label = f'{season}x{en:02d}. {epTitle}'
+        thumb = ep.get('thumb', '')
+        rating = ep.get('rating', 0)
+
+        info = {'title': epTitle, 'mediatype': 'episode', 'tvshowtitle': showTitle, 'season': season, 'episode': en}
+        if ep.get('year'):
+            info['year'] = ep['year']
+        if ep.get('overview'):
+            info['plot'] = ep['overview']
+        if ep.get('premiered'):
+            info['premiered'] = ep['premiered']
+        if ep.get('duration'):
+            info['duration'] = ep['duration']
+        if rating:
+            try:
+                info['rating'] = float(rating)
+            except (ValueError, TypeError):
+                pass
+
+        art = {}
+        if thumb:
+            art['thumb'] = thumb
+            art['icon'] = thumb
+        if seasonPoster:
+            art['poster'] = seasonPoster
+        if not thumb and seasonPoster:
+            art['thumb'] = seasonPoster
+        art = art if art else None
+
+        url = buildUrl(base, 'play_episode', douban_id=douban_id, season=str(season), episode=str(en))
+        li = xbmcgui.ListItem(label, offscreen=True)
+        if art:
+            li.setArt(art)
+        li.setInfo('video', info)
+        li.setProperty('IsPlayable', 'true')
+
+        searchTitle = _cleanTitleForSearch(showTitle)
+        pansouUrl = f'plugin://plugin.video.pansou/?action=auto_play&title={urllib.parse.quote(searchTitle)}&season={season}&episode={en}'
+        li.addContextMenuItems([('盘搜搜索', f'Container.Update({pansouUrl})')], replaceItems=False)
+
+        xbmcplugin.addDirectoryItem(handle, url, li, False)
+
+    endDir(handle, 'episodes')
+
+
+def playEpisode(handle, base, douban_id, season='', episode=''):
+    iKey = _cacheKey('item', douban_id)
+    item = _readCache(iKey)
+    if not item or not isinstance(item, dict):
+        xbmcplugin.setResolvedUrl(handle, False, xbmcgui.ListItem(offscreen=True))
+        return
+
+    title = item.get('title', '')
+    tmdbInfo = item.get('tmdbInfo')
+    if tmdbInfo and tmdbInfo.get('title'):
+        title = tmdbInfo['title']
+
+    if not title:
+        xbmcplugin.setResolvedUrl(handle, False, xbmcgui.ListItem(offscreen=True))
+        return
+
+    params = {'action': 'auto_play', 'title': title}
+    if season:
+        params['season'] = season
+    if episode:
+        params['episode'] = episode
+    query = '&'.join(f'{k}={urllib.parse.quote(str(v), safe="")}' for k, v in params.items())
+    pansouUrl = f'plugin://plugin.video.pansou/?{query}'
+
+    li = xbmcgui.ListItem(path=pansouUrl, offscreen=True)
+    li.setProperty('IsPlayable', 'true')
+    xbmcplugin.setResolvedUrl(handle, True, li)
 
 
 def play(handle, base, douban_id):
@@ -597,7 +772,10 @@ ROUTER = {
     'filter_year': showFilterYear,
     'filter_sort': showFilterSort,
     'filter_list': showFilterList,
+    'seasons': showSeasons,
+    'episodes': showEpisodes,
     'play': play,
+    'play_episode': playEpisode,
     'search_input': showSearchInput,
     'search_results': showSearchResults,
     'clear_cache': clearCache,
