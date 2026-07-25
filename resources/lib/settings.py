@@ -22,5 +22,16 @@ def getTmdbLanguage():
     return _getSetting('tmdb_language', 'zh-CN')
 
 
+def getEnrichThreads():
+    try:
+        return int(_getSetting('enrich_threads', '4'))
+    except (ValueError, TypeError):
+        return 4
+
+
+def getDoubanImgProxy():
+    return _getSetting('douban_img_proxy', 'http://192.168.99.184:8443')
+
+
 def reload():
     _cache.clear()

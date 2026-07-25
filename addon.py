@@ -16,7 +16,7 @@ from resources.lib.doubanApi import (
     fetchRecentHot, fetchRecommend,
 )
 from resources.lib.tmdbApi import searchTmdb, fetchSeasons, fetchEpisodes
-from resources.lib.settings import getSetting, reload as reloadSettings
+from resources.lib.settings import getSetting, getEnrichThreads, getDoubanImgProxy, reload as reloadSettings
 from resources.lib.logger import logInfo, logError
 
 ADDON = xbmcaddon.Addon()
@@ -152,7 +152,7 @@ def _enrichPosters(items):
             tasks.append(item)
     if not tasks:
         return
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=getEnrichThreads()) as pool:
         futures = {pool.submit(_enrichPoster, item): item for item in tasks}
         try:
             for f in as_completed(futures, timeout=15):
@@ -434,16 +434,16 @@ def _backgroundEnrich(cKey, items):
     t.start()
 
 
-_DOUBAN_IMG_PROXY = 'http://192.168.99.184:8443'
-
-
 def _proxyDoubanImage(url):
     if not url or 'doubanio.com' not in url:
+        return url
+    proxy = getDoubanImgProxy()
+    if not proxy:
         return url
     import re
     m = re.match(r'https?://img(\d+)\.doubanio\.com(/.*)', url)
     if m:
-        return f'{_DOUBAN_IMG_PROXY}/img{m.group(1)}{m.group(2)}'
+        return f'{proxy}/img{m.group(1)}{m.group(2)}'
     return url
 
 

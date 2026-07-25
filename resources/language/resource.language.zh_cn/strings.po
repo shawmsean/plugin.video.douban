@@ -6,6 +6,14 @@ msgctxt "#30002"
 msgid "TMDB Language"
 msgstr "TMDB语言"
 
+msgctxt "#30003"
+msgid "Enrichment Threads"
+msgstr "后台Enrichment线程数"
+
+msgctxt "#30004"
+msgid "Douban Image Proxy"
+msgstr "豆瓣图片反代地址"
+
 msgctxt "#30010"
 msgid "TMDB Settings"
-msgstr "TMDB设置"
+msgstr "插件设置"
