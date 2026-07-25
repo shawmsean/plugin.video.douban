@@ -141,6 +141,37 @@ def _readCache(key):
     return []
 
 
+def _enrichPosters(items):
+    if not items:
+        return
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    tasks = []
+    for item in items:
+        poster = item.get('poster', '')
+        if poster and 'doubanio.com' in poster:
+            tasks.append(item)
+    if not tasks:
+        return
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {pool.submit(_enrichPoster, item): item for item in tasks}
+        try:
+            for f in as_completed(futures, timeout=15):
+                pass
+        except Exception:
+            pass
+
+
+def _enrichPoster(item):
+    title = item.get('title', '')
+    if not title:
+        return
+    tmdbInfo = searchTmdb(title)
+    if tmdbInfo and tmdbInfo.get('poster'):
+        item['poster'] = tmdbInfo['poster']
+    if tmdbInfo and tmdbInfo.get('backdrop'):
+        item['backdrop'] = tmdbInfo['backdrop']
+
+
 def _addTriggerItem(handle, nextUrl, triggerIndex):
     li = xbmcgui.ListItem('', offscreen=True)
     li.setProperty('is_trigger', '1')
@@ -214,6 +245,8 @@ def showRoot(handle, base):
                info={'title': cat['name']}, mediatype='video')
     addDir(handle, base, '搜索', 'search_input',
            art={'icon': 'DefaultAddonsSearch.png'})
+    addDir(handle, base, '清除缓存', 'clear_cache',
+           art={'icon': 'DefaultAddonService.png'})
     endDir(handle, 'sources')
 
 
@@ -317,27 +350,25 @@ def showRecentHot(handle, base, cat_id, category='', type='', page=1):
     contentType = _contentTypeForCategory(cat_id)
     mediaType = _mediatypeForCategory(cat_id)
     limit = 20
-    start = (int(page) - 1) * limit
+    page = int(page)
+    start = (page - 1) * limit
 
     cKey = _cacheKey('recent', cat_id, category, type)
-    allItems = _readCache(cKey) if int(page) > 1 else []
+    allItems = _readCache(cKey) if page > 1 else []
+
     items, total = fetchRecentHot(cat_id, category=category, vtype=type, start=start, limit=limit)
-    if not items and int(page) == 1:
+    if not items and page == 1:
         xbmcgui.Dialog().notification("豆瓣推荐", "加载失败或无数据", xbmcgui.NOTIFICATION_INFO, 3000)
         endDir(handle, contentType)
         return
     allItems.extend(items)
     _dedupItems(allItems)
     _writeCache(cKey, allItems)
-    for item in allItems:
-        _addListItem(handle, base, item, mediaType)
     hasMore = start + limit < total
-    if hasMore:
-        nextPage = int(page) + 1
-        nextUrl = buildUrl(base, 'recent_hot', cat_id=cat_id,
-                           category=category, type=type, page=str(nextPage))
-        _addTriggerItem(handle, nextUrl, len(allItems))
-    endDir(handle, contentType)
+    nextUrl = buildUrl(base, 'recent_hot', cat_id=cat_id,
+                       category=category, type=type, page=str(page + 1)) if hasMore else None
+    _renderListWithPager(handle, base, allItems, mediaType, contentType, hasMore=hasMore, nextUrl=nextUrl)
+    _backgroundEnrich(cKey, allItems)
 
 
 def showFilterList(handle, base, cat_id, genre='', region='', year='', sort='U', page=1):
@@ -345,33 +376,56 @@ def showFilterList(handle, base, cat_id, genre='', region='', year='', sort='U',
     contentType = _contentTypeForCategory(cat_id)
     mediaType = _mediatypeForCategory(cat_id)
     limit = 20
-    start = (int(page) - 1) * limit
+    page = int(page)
+    start = (page - 1) * limit
 
     cKey = _cacheKey('filter', cat_id, genre, region, year, sort)
-    allItems = _readCache(cKey) if int(page) > 1 else []
+    allItems = _readCache(cKey) if page > 1 else []
+
     items, total = fetchRecommend(cat_id, genre=genre, region=region, year=year, sort=sort, start=start, limit=limit)
-    if not items and int(page) == 1:
+    if not items and page == 1:
         xbmcgui.Dialog().notification("豆瓣推荐", "加载失败或无数据", xbmcgui.NOTIFICATION_INFO, 3000)
         endDir(handle, contentType)
         return
     allItems.extend(items)
     _dedupItems(allItems)
     _writeCache(cKey, allItems)
-    for item in allItems:
-        _addListItem(handle, base, item, mediaType)
     hasMore = start + limit < total
-    if hasMore:
-        nextPage = int(page) + 1
-        nextUrl = buildUrl(base, 'filter_list', cat_id=cat_id,
-                           genre=genre, region=region, year=year, sort=sort, page=str(nextPage))
-        _addTriggerItem(handle, nextUrl, len(allItems))
+    nextUrl = buildUrl(base, 'filter_list', cat_id=cat_id,
+                       genre=genre, region=region, year=year, sort=sort, page=str(page + 1)) if hasMore else None
+    _renderListWithPager(handle, base, allItems, mediaType, contentType, hasMore=hasMore, nextUrl=nextUrl)
+    _backgroundEnrich(cKey, allItems)
+
+
+def _renderListWithPager(handle, base, items, mediaType, contentType, hasMore=False, nextUrl=None):
+    for item in items:
+        _addListItem(handle, base, item, mediaType)
+    if hasMore and nextUrl:
+        _addTriggerItem(handle, nextUrl, len(items))
     endDir(handle, contentType)
+
+
+def _backgroundEnrich(cKey, items):
+    needsEnrich = any(
+        item.get('poster', '') and 'doubanio.com' in item.get('poster', '')
+        for item in items
+    )
+    if not needsEnrich:
+        return
+    import threading
+    def _worker():
+        _enrichPosters(items)
+        _writeCache(cKey, items)
+        logInfo(f"后台enrich完成，缓存已更新: {cKey}")
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
 
 
 def _addListItem(handle, base, item, mediaType):
     itemId = item.get('id', '')
     title = item.get('title', '')
     poster = item.get('poster', '')
+    backdrop = item.get('backdrop', '')
     year = item.get('year', '')
     rating = item.get('rating', '')
     meta = item.get('meta', '')
@@ -394,7 +448,14 @@ def _addListItem(handle, base, item, mediaType):
     if subtitle:
         info['tagline'] = subtitle
 
-    art = {'thumb': poster, 'poster': poster, 'icon': poster} if poster else None
+    art = {'poster': poster, 'icon': poster} if poster else {}
+    if backdrop:
+        art['thumb'] = backdrop
+        art['fanart'] = backdrop
+        art['landscape'] = backdrop
+    elif poster:
+        art['thumb'] = poster
+    art = art if art else None
     addDir(handle, base, title, 'detail', douban_id=itemId, cat_id=catId,
            art=art, info=info, mediatype=mediaType)
 
@@ -540,6 +601,21 @@ def showSearchResults(handle, base, keyword, page=1):
     endDir(handle, contentType)
 
 
+def clearCache(handle, base):
+    cacheDir = _getCacheDir()
+    count = 0
+    if os.path.exists(cacheDir):
+        for f in os.listdir(cacheDir):
+            if f.startswith('cache_') and f.endswith('.json'):
+                try:
+                    os.remove(os.path.join(cacheDir, f))
+                    count += 1
+                except Exception:
+                    pass
+    xbmcgui.Dialog().notification("豆瓣推荐", f"已清除 {count} 个缓存", xbmcgui.NOTIFICATION_INFO, 3000)
+    xbmc.executebuiltin('Container.Update')
+
+
 ROUTER = {
     'root': showRoot,
     'category_list': showCategoryList,
@@ -553,6 +629,7 @@ ROUTER = {
     'pansou_search': showPansouSearch,
     'search_input': showSearchInput,
     'search_results': showSearchResults,
+    'clear_cache': clearCache,
 }
 
 

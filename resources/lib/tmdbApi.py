@@ -131,8 +131,8 @@ def _formatTmdbResult(item):
     numberOfSeasons = item.get('number_of_seasons', 0)
     numberOfEpisodes = item.get('number_of_episodes', 0)
 
-    poster = f'https://image.tmdb.org/t/p/w500{posterPath}' if posterPath else ''
-    backdrop = f'https://image.tmdb.org/t/p/w1280{backdropPath}' if backdropPath else ''
+    poster = f'https://images.tmdb.org/t/p/w500{posterPath}' if posterPath else ''
+    backdrop = f'https://images.tmdb.org/t/p/w1280{backdropPath}' if backdropPath else ''
 
     return {
         'title': title,
