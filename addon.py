@@ -22,7 +22,7 @@ from resources.lib.logger import logInfo, logError
 ADDON = xbmcaddon.Addon()
 ADDON_ID = ADDON.getAddonInfo('id')
 
-_TRIGGER_INDEX_PROP = 'auto_load_trigger_index'
+_TRIGGER_INDEX_PROP = 'bili_trigger_index'
 
 
 class SettingsMonitor(xbmc.Monitor):
@@ -88,7 +88,7 @@ def addPlayItem(handle, base, name, action, art=None, info=None, mediatype=None,
     xbmcplugin.addDirectoryItem(handle, url, li, False)
 
 
-def endDir(handle, content_type=None, cache=False):
+def endDir(handle, content_type=None, cache=True):
     if content_type:
         xbmcplugin.setContent(handle, content_type)
     xbmcplugin.endOfDirectory(handle, cacheToDisc=cache)
