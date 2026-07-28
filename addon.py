@@ -316,6 +316,59 @@ def _showFilterDimensions(handle, base, cat_id):
     endDir(handle, 'sources')
 
 
+def _addFilterItem(handle, base, name, filter_value):
+    li = xbmcgui.ListItem(name if name else '全部', offscreen=True)
+    li.setProperty('filter_value', filter_value)
+    url = buildUrl(base, 'filter_dummy', fv=filter_value)
+    xbmcplugin.addDirectoryItem(handle, url, li, True)
+
+
+def showFilterCategories(handle, base):
+    xbmcgui.Window(10000).setProperty('filter_browse_plugin', ADDON_ID)
+    for cat in CATEGORIES:
+        if cat['id'] in ('movie_filter', 'tv_filter', 'show_filter'):
+            _addFilterItem(handle, base, cat['name'], cat['id'])
+    endDir(handle, 'sources', cache=False)
+
+
+def showFilterGenres(handle, base, cat_id=''):
+    if cat_id == 'movie_filter':
+        genres = MOVIE_FILTER_GENRES
+    elif cat_id == 'tv_filter':
+        genres = TV_FILTER_GENRES
+    elif cat_id == 'show_filter':
+        genres = SHOW_FILTER_GENRES
+    else:
+        genres = MOVIE_FILTER_GENRES
+    for g in genres:
+        _addFilterItem(handle, base, g, g)
+    endDir(handle, 'sources', cache=False)
+
+
+def showFilterRegions(handle, base, cat_id=''):
+    if cat_id == 'movie_filter':
+        regions = FILTER_REGIONS
+    elif cat_id in ('tv_filter', 'show_filter'):
+        regions = TV_FILTER_REGIONS
+    else:
+        regions = FILTER_REGIONS
+    for r in regions:
+        _addFilterItem(handle, base, r, r)
+    endDir(handle, 'sources', cache=False)
+
+
+def showFilterYears(handle, base):
+    for y in FILTER_YEARS:
+        _addFilterItem(handle, base, y, y)
+    endDir(handle, 'sources', cache=False)
+
+
+def showFilterSorts(handle, base):
+    for s in FILTER_SORTS:
+        _addFilterItem(handle, base, s['name'], s['value'])
+    endDir(handle, 'sources', cache=False)
+
+
 def showFilterRegion(handle, base, cat_id, genre):
     if cat_id == 'movie_filter':
         regions = FILTER_REGIONS
@@ -768,6 +821,11 @@ ROUTER = {
     'root': showRoot,
     'category_list': showCategoryList,
     'recent_hot': showRecentHot,
+    'filter_categories': showFilterCategories,
+    'filter_genres': showFilterGenres,
+    'filter_regions': showFilterRegions,
+    'filter_years': showFilterYears,
+    'filter_sorts': showFilterSorts,
     'filter_region': showFilterRegion,
     'filter_year': showFilterYear,
     'filter_sort': showFilterSort,
