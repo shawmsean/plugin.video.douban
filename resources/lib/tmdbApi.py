@@ -1,4 +1,7 @@
 import time
+import os
+import json
+import hashlib
 from resources.lib.httpClient import get
 from resources.lib.settings import getTmdbApiKey, getTmdbLanguage
 from resources.lib.logger import logInfo, logError
@@ -6,6 +9,58 @@ from resources.lib.logger import logInfo, logError
 _cache = {}
 _cacheTs = {}
 CACHE_TTL = 3600
+_DISK_CACHE_TTL = 86400 * 7
+_diskCacheDir = None
+
+
+def _getDiskCacheDir():
+    global _diskCacheDir
+    if _diskCacheDir is None:
+        try:
+            import xbmcvfs
+            import xbmcaddon
+            _diskCacheDir = xbmcvfs.translatePath(xbmcaddon.Addon().getAddonInfo('profile'))
+        except AttributeError:
+            import xbmc
+            import xbmcaddon
+            _diskCacheDir = xbmc.translatePath(xbmcaddon.Addon().getAddonInfo('profile'))
+    return _diskCacheDir
+
+
+def _diskRead(key, ttl=_DISK_CACHE_TTL):
+    try:
+        h = hashlib.md5(key.encode()).hexdigest()
+        path = os.path.join(_getDiskCacheDir(), f'tmdb_{h}.json')
+        if not os.path.exists(path):
+            return None
+        with open(path, 'r', encoding='utf-8') as f:
+            payload = json.load(f)
+        if isinstance(payload, dict) and '_ts' in payload:
+            if int(time.time()) - payload['_ts'] > ttl:
+                return None
+            return payload.get('data')
+        return payload
+    except Exception:
+        pass
+    return None
+
+
+def _diskWrite(key, value):
+    try:
+        d = _getDiskCacheDir()
+        if not os.path.exists(d):
+            os.makedirs(d, exist_ok=True)
+        h = hashlib.md5(key.encode()).hexdigest()
+        path = os.path.join(d, f'tmdb_{h}.json')
+        tmp = path + '.tmp'
+        payload = {'_ts': int(time.time()), 'data': value}
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, ensure_ascii=False)
+        if os.path.exists(path):
+            os.remove(path)
+        os.rename(tmp, path)
+    except Exception:
+        pass
 
 
 def _tmdbUrl(path, **params):
@@ -20,12 +75,18 @@ def _tmdbUrl(path, **params):
 def _getCached(key):
     if key in _cache and (time.time() - _cacheTs.get(key, 0) < CACHE_TTL):
         return _cache[key]
+    diskVal = _diskRead(key)
+    if diskVal is not None:
+        _cache[key] = diskVal
+        _cacheTs[key] = time.time()
+        return diskVal
     return None
 
 
 def _setCached(key, value):
     _cache[key] = value
     _cacheTs[key] = time.time()
+    _diskWrite(key, value)
 
 
 def searchTmdb(title, skip_detail=False):

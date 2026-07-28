@@ -3,6 +3,7 @@ import sys
 import os
 import json
 import hashlib
+import time
 import urllib.parse
 import xbmc
 import xbmcplugin
@@ -111,7 +112,10 @@ def _cacheKey(*parts):
     return 'douban_cache_' + '_'.join(str(p) for p in parts)
 
 
-def _writeCache(key, items):
+_LIST_CACHE_TTL = 1800
+
+
+def _writeCache(key, items, ts=None):
     try:
         cacheDir = _getCacheDir()
         if not os.path.exists(cacheDir):
@@ -119,8 +123,9 @@ def _writeCache(key, items):
         h = hashlib.md5(key.encode()).hexdigest()
         path = os.path.join(cacheDir, f'cache_{h}.json')
         tmp = path + '.tmp'
+        payload = {'_ts': ts or int(time.time()), 'data': items}
         with open(tmp, 'w', encoding='utf-8') as f:
-            json.dump(items, f, ensure_ascii=False)
+            json.dump(payload, f, ensure_ascii=False)
         if os.path.exists(path):
             os.remove(path)
         os.rename(tmp, path)
@@ -128,17 +133,24 @@ def _writeCache(key, items):
         pass
 
 
-def _readCache(key):
+def _readCache(key, ttl=0):
     try:
         h = hashlib.md5(key.encode()).hexdigest()
         path = os.path.join(_getCacheDir(), f'cache_{h}.json')
         if not os.path.exists(path):
-            return []
+            return None
         with open(path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            payload = json.load(f)
+        if isinstance(payload, dict) and 'data' in payload:
+            if ttl > 0:
+                ts = payload.get('_ts', 0)
+                if int(time.time()) - ts > ttl:
+                    return None
+            return payload['data']
+        return payload
     except Exception:
         pass
-    return []
+    return None
 
 
 def _enrichPosters(items):
@@ -419,7 +431,17 @@ def showRecentHot(handle, base, cat_id, category='', type='', page=1):
     start = (page - 1) * limit
 
     cKey = _cacheKey('recent', cat_id, category, type)
-    allItems = _readCache(cKey) if page > 1 else []
+    if page > 1:
+        allItems = _readCache(cKey) or []
+    else:
+        allItems = _readCache(cKey, ttl=_LIST_CACHE_TTL)
+        if allItems is not None:
+            logInfo(f"近期热门缓存命中: {len(allItems)}项")
+            _renderListWithPager(handle, base, allItems, mediaType, contentType, cat_id=cat_id, hasMore=True,
+                                 nextUrl=buildUrl(base, 'recent_hot', cat_id=cat_id,
+                                                  category=category, type=type, page='2'))
+            return
+        allItems = []
 
     items, total = fetchRecentHot(cat_id, category=category, vtype=type, start=start, limit=limit)
     if not items and page == 1:
@@ -445,7 +467,17 @@ def showFilterList(handle, base, cat_id, genre='', region='', year='', sort='U',
     start = (page - 1) * limit
 
     cKey = _cacheKey('filter', cat_id, genre, region, year, sort)
-    allItems = _readCache(cKey) if page > 1 else []
+    if page > 1:
+        allItems = _readCache(cKey) or []
+    else:
+        allItems = _readCache(cKey, ttl=_LIST_CACHE_TTL)
+        if allItems is not None:
+            logInfo(f"筛选缓存命中: {len(allItems)}项")
+            _renderListWithPager(handle, base, allItems, mediaType, contentType, cat_id=cat_id, hasMore=True,
+                                 nextUrl=buildUrl(base, 'filter_list', cat_id=cat_id,
+                                                  genre=genre, region=region, year=year, sort=sort, page='2'))
+            return
+        allItems = []
 
     items, total = fetchRecommend(cat_id, genre=genre, region=region, year=year, sort=sort, start=start, limit=limit)
     if not items and page == 1:
@@ -807,7 +839,7 @@ def clearCache(handle, base):
     count = 0
     if os.path.exists(cacheDir):
         for f in os.listdir(cacheDir):
-            if f.startswith('cache_') and f.endswith('.json'):
+            if f.endswith('.json') and (f.startswith('cache_') or f.startswith('tmdb_')):
                 try:
                     os.remove(os.path.join(cacheDir, f))
                     count += 1
