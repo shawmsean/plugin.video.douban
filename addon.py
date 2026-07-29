@@ -381,6 +381,13 @@ def showFilterSorts(handle, base):
     endDir(handle, 'sources', cache=False)
 
 
+def showFilterPlatforms(handle, base, cat_id=''):
+    platforms = TV_FILTER_PLATFORMS if cat_id in ('tv_filter', 'show_filter') else []
+    for p in platforms:
+        _addFilterItem(handle, base, p, p)
+    endDir(handle, 'sources', cache=False)
+
+
 def showFilterRegion(handle, base, cat_id, genre):
     if cat_id == 'movie_filter':
         regions = FILTER_REGIONS
@@ -458,15 +465,15 @@ def showRecentHot(handle, base, cat_id, category='', type='', page=1):
     _backgroundEnrich(cKey, allItems)
 
 
-def showFilterList(handle, base, cat_id, genre='', region='', year='', sort='U', page=1):
-    logInfo(f"筛选: cat={cat_id}, genre={genre}, region={region}, year={year}, sort={sort}, page={page}")
+def showFilterList(handle, base, cat_id, genre='', region='', year='', platform='', sort='U', page=1):
+    logInfo(f"筛选: cat={cat_id}, genre={genre}, region={region}, year={year}, platform={platform}, sort={sort}, page={page}")
     contentType = _contentTypeForCategory(cat_id)
     mediaType = _mediatypeForCategory(cat_id)
     limit = 20
     page = int(page)
     start = (page - 1) * limit
 
-    cKey = _cacheKey('filter', cat_id, genre, region, year, sort)
+    cKey = _cacheKey('filter', cat_id, genre, region, year, platform, sort)
     if page > 1:
         allItems = _readCache(cKey) or []
     else:
@@ -475,11 +482,11 @@ def showFilterList(handle, base, cat_id, genre='', region='', year='', sort='U',
             logInfo(f"筛选缓存命中: {len(allItems)}项")
             _renderListWithPager(handle, base, allItems, mediaType, contentType, cat_id=cat_id, hasMore=True,
                                  nextUrl=buildUrl(base, 'filter_list', cat_id=cat_id,
-                                                  genre=genre, region=region, year=year, sort=sort, page='2'))
+                                                  genre=genre, region=region, year=year, platform=platform, sort=sort, page='2'))
             return
         allItems = []
 
-    items, total = fetchRecommend(cat_id, genre=genre, region=region, year=year, sort=sort, start=start, limit=limit)
+    items, total = fetchRecommend(cat_id, genre=genre, region=region, year=year, platform=platform, sort=sort, start=start, limit=limit)
     if not items and page == 1:
         xbmcgui.Dialog().notification("豆瓣推荐", "加载失败或无数据", xbmcgui.NOTIFICATION_INFO, 3000)
         endDir(handle, contentType)
@@ -489,7 +496,7 @@ def showFilterList(handle, base, cat_id, genre='', region='', year='', sort='U',
     _writeCache(cKey, allItems)
     hasMore = start + limit < total
     nextUrl = buildUrl(base, 'filter_list', cat_id=cat_id,
-                       genre=genre, region=region, year=year, sort=sort, page=str(page + 1)) if hasMore else None
+                       genre=genre, region=region, year=year, platform=platform, sort=sort, page=str(page + 1)) if hasMore else None
     _renderListWithPager(handle, base, allItems, mediaType, contentType, cat_id=cat_id, hasMore=hasMore, nextUrl=nextUrl)
     _backgroundEnrich(cKey, allItems)
 
@@ -858,6 +865,7 @@ ROUTER = {
     'filter_regions': showFilterRegions,
     'filter_years': showFilterYears,
     'filter_sorts': showFilterSorts,
+    'filter_platforms': showFilterPlatforms,
     'filter_region': showFilterRegion,
     'filter_year': showFilterYear,
     'filter_sort': showFilterSort,
