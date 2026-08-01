@@ -387,8 +387,7 @@ def showFilterRegions(handle, base, cat_id=''):
     if cat_id == 'movie':
         for r in MOVIE_REGIONS:
             _addFilterItem(handle, base, r['name'], r['value'])
-    elif cat_id in ('tv', 'show'):
-        _addFilterItem(handle, base, '全部', '全部')
+
     elif cat_id == 'movie_filter':
         for r in FILTER_REGIONS:
             _addFilterItem(handle, base, r, r)
@@ -402,8 +401,6 @@ def showFilterYears(handle, base, cat_id=''):
     if _isFilterCategory(cat_id):
         for y in FILTER_YEARS:
             _addFilterItem(handle, base, y, y)
-    else:
-        _addFilterItem(handle, base, '全部', '')
     endDir(handle, 'sources', cache=False)
 
 
@@ -411,8 +408,6 @@ def showFilterSorts(handle, base, cat_id=''):
     if _isFilterCategory(cat_id):
         for s in FILTER_SORTS:
             _addFilterItem(handle, base, s['name'], s['value'])
-    else:
-        _addFilterItem(handle, base, '全部', '')
     endDir(handle, 'sources', cache=False)
 
 
@@ -420,8 +415,6 @@ def showFilterPlatforms(handle, base, cat_id=''):
     if cat_id in ('tv_filter', 'show_filter'):
         for p in TV_FILTER_PLATFORMS:
             _addFilterItem(handle, base, p, p)
-    else:
-        _addFilterItem(handle, base, '全部', '')
     endDir(handle, 'sources', cache=False)
 
 
