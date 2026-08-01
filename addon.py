@@ -97,6 +97,7 @@ def endDir(handle, content_type=None, cache=True):
 
 
 _CACHE_DIR = None
+_listCache = {}
 
 
 def _getCacheDir():
@@ -130,16 +131,35 @@ def _writeCache(key, items, ts=None):
         if os.path.exists(path):
             os.remove(path)
         os.rename(tmp, path)
+        _listCache[key] = items
     except Exception:
         pass
 
 
 def _readCache(key, ttl=0):
+    if key in _listCache and ttl == 0:
+        return _listCache[key]
     try:
         h = hashlib.md5(key.encode()).hexdigest()
         path = os.path.join(_getCacheDir(), f'cache_{h}.json')
         if not os.path.exists(path):
             return None
+        with open(path, 'r', encoding='utf-8') as f:
+            payload = json.load(f)
+        if isinstance(payload, dict) and 'data' in payload:
+            if ttl > 0:
+                ts = payload.get('_ts', 0)
+                if int(time.time()) - ts > ttl:
+                    _listCache.pop(key, None)
+                    return None
+            data = payload['data']
+            _listCache[key] = data
+            return data
+        _listCache[key] = payload
+        return payload
+    except Exception:
+        pass
+    return None
         with open(path, 'r', encoding='utf-8') as f:
             payload = json.load(f)
         if isinstance(payload, dict) and 'data' in payload:
@@ -207,14 +227,13 @@ def _addTriggerItem(handle, nextUrl, triggerIndex):
 
 def _dedupItems(items):
     seen = set()
-    i = 0
-    while i < len(items):
-        iid = items[i].get('id', '')
-        if iid in seen:
-            items.pop(i)
-        else:
+    deduped = []
+    for item in items:
+        iid = item.get('id', '')
+        if iid not in seen:
             seen.add(iid)
-            i += 1
+            deduped.append(item)
+    items[:] = deduped
 
 
 def _buildTmdbMeta(tmdbInfo, poster=''):

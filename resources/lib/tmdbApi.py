@@ -73,8 +73,12 @@ def _tmdbUrl(path, **params):
 
 
 def _getCached(key):
-    if key in _cache and (time.time() - _cacheTs.get(key, 0) < CACHE_TTL):
-        return _cache[key]
+    if key in _cache:
+        if time.time() - _cacheTs.get(key, 0) < CACHE_TTL:
+            return _cache[key]
+        else:
+            _cache.pop(key, None)
+            _cacheTs.pop(key, None)
     diskVal = _diskRead(key)
     if diskVal is not None:
         _cache[key] = diskVal
@@ -86,7 +90,8 @@ def _getCached(key):
 def _setCached(key, value):
     _cache[key] = value
     _cacheTs[key] = time.time()
-    _diskWrite(key, value)
+    if value is not None:
+        _diskWrite(key, value)
 
 
 def searchTmdb(title, skip_detail=False):
