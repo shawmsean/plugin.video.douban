@@ -160,18 +160,7 @@ def _readCache(key, ttl=0):
     except Exception:
         pass
     return None
-        with open(path, 'r', encoding='utf-8') as f:
-            payload = json.load(f)
-        if isinstance(payload, dict) and 'data' in payload:
-            if ttl > 0:
-                ts = payload.get('_ts', 0)
-                if int(time.time()) - ts > ttl:
-                    return None
-            return payload['data']
-        return payload
-    except Exception:
-        pass
-    return None
+
 
 
 def _enrichPosters(items):
