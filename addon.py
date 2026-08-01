@@ -165,7 +165,7 @@ def _readCache(key, ttl=0):
 
 def _enrichPosters(items):
     if not items:
-        return
+        return 0, 0
     from concurrent.futures import ThreadPoolExecutor, as_completed
     tasks = []
     for item in items:
@@ -173,14 +173,19 @@ def _enrichPosters(items):
         if poster and 'doubanio.com' in poster:
             tasks.append(item)
     if not tasks:
-        return
+        return 0, 0
+    done = 0
+    total = len(tasks)
     with ThreadPoolExecutor(max_workers=getEnrichThreads()) as pool:
         futures = {pool.submit(_enrichPoster, item): item for item in tasks}
         try:
             for f in as_completed(futures, timeout=15):
-                pass
+                done += 1
         except Exception:
             pass
+    enriched = sum(1 for item in tasks if item.get('tmdbInfo'))
+    return done, enriched
+
 
 
 def _cleanTitleForSearch(title):
@@ -527,9 +532,18 @@ def _backgroundEnrich(cKey, items):
         return
     import threading
     def _worker():
-        _enrichPosters(items)
-        _writeCache(cKey, items)
-        logInfo(f"后台enrich完成，缓存已更新: {cKey}")
+        progress = xbmcgui.DialogProgressBG()
+        progress.create('豆瓣推荐', '正在补充海报...')
+        try:
+            done, enriched = _enrichPosters(items)
+            _writeCache(cKey, items)
+            logInfo(f"后台enrich完成: {enriched}/{done}项已补充, 缓存已更新: {cKey}")
+            if enriched > 0:
+                progress.update(100, f'补充完成: {enriched}项')
+        except Exception as e:
+            logError(f"后台enrich异常: {e}")
+        finally:
+            progress.close()
 
     t = threading.Thread(target=_worker, daemon=True)
     t.start()
