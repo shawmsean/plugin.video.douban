@@ -279,12 +279,8 @@ def _mediatypeForCategory(categoryId):
 
 def showRoot(handle, base):
     for cat in CATEGORIES:
-        if cat['id'] in ('movie', 'tv', 'show'):
-            addDir(handle, base, cat['name'], 'filter_categories', cat_id=cat['id'],
-                   info={'title': cat['name']}, mediatype='video')
-        else:
-            addDir(handle, base, cat['name'], 'category_list', cat_id=cat['id'],
-                   info={'title': cat['name']}, mediatype='video')
+        addDir(handle, base, cat['name'], 'category_list', cat_id=cat['id'],
+               info={'title': cat['name']}, mediatype='video')
     addDir(handle, base, '搜索', 'search_input',
            art={'icon': 'DefaultAddonsSearch.png'})
     addDir(handle, base, '清除缓存', 'clear_cache',
@@ -356,66 +352,76 @@ def _addFilterItem(handle, base, name, filter_value):
 def showFilterCategories(handle, base):
     xbmcgui.Window(10000).setProperty('filter_browse_plugin', ADDON_ID)
     for cat in CATEGORIES:
-        if cat['id'] in ('movie', 'tv', 'show'):
-            _addFilterItem(handle, base, cat['name'], cat['id'])
+        _addFilterItem(handle, base, cat['name'], cat['id'])
     endDir(handle, 'sources', cache=False)
 
 
-def _filterCatId(cat_id):
-    if cat_id == 'movie':
-        return 'movie_filter'
-    if cat_id == 'tv':
-        return 'tv_filter'
-    if cat_id == 'show':
-        return 'show_filter'
-    return cat_id
+
+def _isFilterCategory(cat_id):
+    return cat_id in ('movie_filter', 'tv_filter', 'show_filter')
 
 
 def showFilterGenres(handle, base, cat_id=''):
-    fcid = _filterCatId(cat_id)
-    if fcid == 'movie_filter':
-        genres = MOVIE_FILTER_GENRES
-    elif fcid == 'tv_filter':
-        genres = TV_FILTER_GENRES
-    elif fcid == 'show_filter':
-        genres = SHOW_FILTER_GENRES
-    else:
-        genres = MOVIE_FILTER_GENRES
-    for g in genres:
-        _addFilterItem(handle, base, g, g)
+    if cat_id == 'movie':
+        for c in MOVIE_CATEGORIES:
+            _addFilterItem(handle, base, c['name'], c['value'])
+    elif cat_id == 'tv':
+        for t in TV_TYPES:
+            _addFilterItem(handle, base, t['name'], t['value'])
+    elif cat_id == 'show':
+        for t in SHOW_TYPES:
+            _addFilterItem(handle, base, t['name'], t['value'])
+    elif cat_id == 'movie_filter':
+        for g in MOVIE_FILTER_GENRES:
+            _addFilterItem(handle, base, g, g)
+    elif cat_id == 'tv_filter':
+        for g in TV_FILTER_GENRES:
+            _addFilterItem(handle, base, g, g)
+    elif cat_id == 'show_filter':
+        for g in SHOW_FILTER_GENRES:
+            _addFilterItem(handle, base, g, g)
     endDir(handle, 'sources', cache=False)
 
 
 def showFilterRegions(handle, base, cat_id=''):
-    fcid = _filterCatId(cat_id)
-    if fcid == 'movie_filter':
-        regions = FILTER_REGIONS
-    elif fcid in ('tv_filter', 'show_filter'):
-        regions = TV_FILTER_REGIONS
+    if cat_id == 'movie':
+        for r in MOVIE_REGIONS:
+            _addFilterItem(handle, base, r['name'], r['value'])
+    elif cat_id in ('tv', 'show'):
+        _addFilterItem(handle, base, '全部', '全部')
+    elif cat_id == 'movie_filter':
+        for r in FILTER_REGIONS:
+            _addFilterItem(handle, base, r, r)
+    elif cat_id in ('tv_filter', 'show_filter'):
+        for r in TV_FILTER_REGIONS:
+            _addFilterItem(handle, base, r, r)
+    endDir(handle, 'sources', cache=False)
+
+
+def showFilterYears(handle, base, cat_id=''):
+    if _isFilterCategory(cat_id):
+        for y in FILTER_YEARS:
+            _addFilterItem(handle, base, y, y)
     else:
-        regions = FILTER_REGIONS
-    for r in regions:
-        _addFilterItem(handle, base, r, r)
+        _addFilterItem(handle, base, '全部', '')
     endDir(handle, 'sources', cache=False)
 
 
-def showFilterYears(handle, base):
-    for y in FILTER_YEARS:
-        _addFilterItem(handle, base, y, y)
-    endDir(handle, 'sources', cache=False)
-
-
-def showFilterSorts(handle, base):
-    for s in FILTER_SORTS:
-        _addFilterItem(handle, base, s['name'], s['value'])
+def showFilterSorts(handle, base, cat_id=''):
+    if _isFilterCategory(cat_id):
+        for s in FILTER_SORTS:
+            _addFilterItem(handle, base, s['name'], s['value'])
+    else:
+        _addFilterItem(handle, base, '全部', '')
     endDir(handle, 'sources', cache=False)
 
 
 def showFilterPlatforms(handle, base, cat_id=''):
-    fcid = _filterCatId(cat_id)
-    platforms = TV_FILTER_PLATFORMS if fcid in ('tv_filter', 'show_filter') else []
-    for p in platforms:
-        _addFilterItem(handle, base, p, p)
+    if cat_id in ('tv_filter', 'show_filter'):
+        for p in TV_FILTER_PLATFORMS:
+            _addFilterItem(handle, base, p, p)
+    else:
+        _addFilterItem(handle, base, '全部', '')
     endDir(handle, 'sources', cache=False)
 
 
@@ -498,9 +504,8 @@ def showRecentHot(handle, base, cat_id, category='', type='', page=1):
 
 def showFilterList(handle, base, cat_id, genre='', region='', year='', platform='', sort='U', page=1):
     logInfo(f"筛选: cat={cat_id}, genre={genre}, region={region}, year={year}, platform={platform}, sort={sort}, page={page}")
-    fcid = _filterCatId(cat_id)
-    contentType = _contentTypeForCategory(fcid)
-    mediaType = _mediatypeForCategory(fcid)
+    contentType = _contentTypeForCategory(cat_id)
+    mediaType = _mediatypeForCategory(cat_id)
     limit = 20
     page = int(page)
     start = (page - 1) * limit
@@ -518,7 +523,14 @@ def showFilterList(handle, base, cat_id, genre='', region='', year='', platform=
             return
         allItems = []
 
-    items, total = fetchRecommend(fcid, genre=genre, region=region, year=year, platform=platform, sort=sort, start=start, limit=limit)
+    if _isFilterCategory(cat_id):
+        fcid = cat_id
+        items, total = fetchRecommend(fcid, genre=genre, region=region, year=year, platform=platform, sort=sort, start=start, limit=limit)
+    else:
+        category = genre if cat_id == 'movie' else cat_id
+        vtype = genre if cat_id in ('tv', 'show') else (region if cat_id == 'movie' else '')
+        items, total = fetchRecentHot(cat_id, category=category, vtype=vtype, start=start, limit=limit)
+
     if not items and page == 1:
         xbmcgui.Dialog().notification("豆瓣推荐", "加载失败或无数据", xbmcgui.NOTIFICATION_INFO, 3000)
         endDir(handle, contentType)
