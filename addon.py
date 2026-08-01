@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import sys
 import os
+import re
 import json
 import hashlib
 import time
@@ -174,7 +175,7 @@ def _enrichPosters(items):
 
 
 def _cleanTitleForSearch(title):
-    import re
+
     cleaned = re.sub(r'\s*第[一二三四五六七八九十\d]+季\s*$', '', title)
     return cleaned.strip() if cleaned.strip() != title.strip() else title
 
@@ -532,7 +533,7 @@ def _proxyDoubanImage(url):
     proxy = getDoubanImgProxy()
     if not proxy:
         return url
-    import re
+
     m = re.match(r'https?://img(\d+)\.doubanio\.com(/.*)', url)
     if m:
         return f'{proxy}/img{m.group(1)}{m.group(2)}'
@@ -752,7 +753,7 @@ def showEpisodes(handle, base, tmdb_id, season, douban_id):
     endDir(handle, 'episodes')
 
 
-def playEpisode(handle, base, douban_id, season='', episode=''):
+def _playMedia(handle, douban_id, season='', episode=''):
     iKey = _cacheKey('item', douban_id)
     item = _readCache(iKey)
     if not item or not isinstance(item, dict):
@@ -760,15 +761,21 @@ def playEpisode(handle, base, douban_id, season='', episode=''):
         return
 
     title = item.get('title', '')
+    year = item.get('year', '') if not season else ''
     tmdbInfo = item.get('tmdbInfo')
-    if tmdbInfo and tmdbInfo.get('title'):
-        title = tmdbInfo['title']
+    if tmdbInfo:
+        if tmdbInfo.get('title'):
+            title = tmdbInfo['title']
+        if not season and tmdbInfo.get('year'):
+            year = tmdbInfo['year']
 
     if not title:
         xbmcplugin.setResolvedUrl(handle, False, xbmcgui.ListItem(offscreen=True))
         return
 
     params = {'action': 'auto_play', 'title': title}
+    if not season and year:
+        params['year'] = year
     if season:
         params['season'] = season
     if episode:
@@ -782,34 +789,11 @@ def playEpisode(handle, base, douban_id, season='', episode=''):
 
 
 def play(handle, base, douban_id):
-    iKey = _cacheKey('item', douban_id)
-    item = _readCache(iKey)
-    if not item or not isinstance(item, dict):
-        xbmcplugin.setResolvedUrl(handle, False, xbmcgui.ListItem(offscreen=True))
-        return
+    _playMedia(handle, douban_id)
 
-    title = item.get('title', '')
-    year = item.get('year', '')
-    tmdbInfo = item.get('tmdbInfo')
-    if tmdbInfo:
-        if tmdbInfo.get('title'):
-            title = tmdbInfo['title']
-        if tmdbInfo.get('year'):
-            year = tmdbInfo['year']
 
-    if not title:
-        xbmcplugin.setResolvedUrl(handle, False, xbmcgui.ListItem(offscreen=True))
-        return
-
-    params = {'action': 'auto_play', 'title': title}
-    if year:
-        params['year'] = year
-    query = '&'.join(f'{k}={urllib.parse.quote(str(v), safe="")}' for k, v in params.items())
-    pansouUrl = f'plugin://plugin.video.pansou/?{query}'
-
-    li = xbmcgui.ListItem(path=pansouUrl, offscreen=True)
-    li.setProperty('IsPlayable', 'true')
-    xbmcplugin.setResolvedUrl(handle, True, li)
+def playEpisode(handle, base, douban_id, season='', episode=''):
+    _playMedia(handle, douban_id, season=season, episode=episode)
 
 
 def showSearchInput(handle, base):
@@ -880,7 +864,14 @@ ROUTER = {
 }
 
 
+_settings_monitor = None
+
+
 def main():
+    global _settings_monitor
+    if _settings_monitor is None:
+        _settings_monitor = SettingsMonitor()
+
     handle = int(sys.argv[1])
     base = sys.argv[0]
     params = parseParams(sys.argv[2]) if len(sys.argv) > 2 else {}

@@ -1,4 +1,5 @@
 import json
+import re
 import urllib.parse
 from resources.lib.httpClient import get
 from resources.lib.logger import logInfo, logError
@@ -195,7 +196,7 @@ def _parseItem(item, categoryId):
     cardSubtitle = item.get('card_subtitle', '')
     year = ''
     if cardSubtitle:
-        import re
+
         yearMatch = re.match(r'^(\d{4})', cardSubtitle)
         if yearMatch:
             year = yearMatch.group(1)
