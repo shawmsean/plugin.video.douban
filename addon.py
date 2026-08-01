@@ -532,18 +532,16 @@ def _backgroundEnrich(cKey, items):
         return
     import threading
     def _worker():
-        progress = xbmcgui.DialogProgressBG()
-        progress.create('豆瓣推荐', '正在补充海报...')
         try:
             done, enriched = _enrichPosters(items)
             _writeCache(cKey, items)
             logInfo(f"后台enrich完成: {enriched}/{done}项已补充, 缓存已更新: {cKey}")
             if enriched > 0:
-                progress.update(100, f'补充完成: {enriched}项')
+                xbmc.executebuiltin(
+                    f'Notification(豆瓣推荐,补充完成: {enriched}项海报已更新,5000)'
+                )
         except Exception as e:
             logError(f"后台enrich异常: {e}")
-        finally:
-            progress.close()
 
     t = threading.Thread(target=_worker, daemon=True)
     t.start()
